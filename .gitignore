@@ -2,3 +2,10 @@
 __pycache__
 /venv
 .venv
+src/api/resume_routes copy.py
+src/api/sse_routes copy.py
+src/utils/redis_pubsub copy.py
+src/workers/resume_tasks copy.py
+src/celery_config copy.py
+
+docker-compose copy.yml

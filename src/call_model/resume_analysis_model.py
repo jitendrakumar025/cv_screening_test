@@ -7,13 +7,10 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import SystemMessage, HumanMessage
 
 
-def evaluate_resume_sync(resume: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
-    return asyncio.run(evaluate_resume(resume, parameters))
-
-
 ##################----------################
-async def evaluate_resume(resume: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+def evaluate_resume_sync(resume: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
     try:
+        print("debug in evaluate_resume 1234")
         llm = initialize_llm(1)
         PROMPT = f"""
             RESUME = {resume}
@@ -39,7 +36,7 @@ async def evaluate_resume(resume: str, parameters: Dict[str, Any]) -> Dict[str, 
                 }},
                 ... so on
                 {{
-                  "Additional Parameters":[{{"title":"additional parameter defined by recruiter","reponse":"whether resume satify this parameter or not [ALWAYS in `type` defined in PARAMETERS ] "}}.
+                  "Additional Parameters":[{{"title":"additional parameter defined by recruiter","response":"whether resume satify this parameter or not [ALWAYS in `type` defined in PARAMETERS ] "}}.
                   ... so on for other additional fields
                   ]
                 }}
@@ -54,10 +51,11 @@ async def evaluate_resume(resume: str, parameters: Dict[str, Any]) -> Dict[str, 
         )
 
         chain = prompt | llm
-        results = await llm.ainvoke(PROMPT)
+        results = llm.invoke(PROMPT)
         json_result: Dict[str, Any] = json.loads(
             results.content.strip().strip("```json").strip("```")
         )
+        print("Result in evaluaterebadnn>> ",results.content[1:10])
         return json_result
     except Exception as E:
         raise ValueError(f"Error when evaluating resume, Reason: {E}")

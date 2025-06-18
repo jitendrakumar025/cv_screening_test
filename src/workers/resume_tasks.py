@@ -30,7 +30,8 @@ def process_resume_task(self, resume_text, parameters, resume_id, batch_id, tota
         total_count: Total number of resumes in the batch
     """
     redis_client = get_redis_client()
-    status_channel = f"resume_status_{batch_id}"
+    # status_channel = f"resume_status_{batch_id}"
+    status_channel = f"resume_status"
     
     # Generate unique hash for deduplication
     resume_hash = generate_resume_hash(resume_text, parameters)
@@ -99,14 +100,14 @@ def process_resume_task(self, resume_text, parameters, resume_id, batch_id, tota
         }))
 
         # Log before LLM call
-        logger.info(f"📄 Calling LLM for resume {resume_id}")
+        # logger.info(f"📄 Calling LLM for resume {resume_id}")
         
         # Main processing - LLM call
         resume_result = evaluate_resume_sync(resume_text, parameters)
         
         processing_time = time.time() - start_time
-        logger.info(f"✅ LLM processing completed for resume {resume_id} in {processing_time:.2f}s")
-        logger.info(f"📊 Result: {len(resume_result.get('resume_score', []))} criteria evaluated")
+        # logger.info(f"✅ LLM processing completed for resume {resume_id} in {processing_time:.2f}s")
+        # logger.info(f"📊 Result: {len(resume_result.get('resume_score', []))} criteria evaluated")
         
         # Cache the result (expires in 1 hour)
         redis_client.setex(result_key, 3600, json.dumps(resume_result))

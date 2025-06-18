@@ -10,7 +10,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 ##################----------################
 def evaluate_resume_sync(resume: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
     try:
-        print("debug in evaluate_resume 1234")
+        # print("debug in evaluate_resume 1234")
         llm = initialize_llm(1)
         PROMPT = f"""
             RESUME = {resume}
@@ -55,7 +55,7 @@ def evaluate_resume_sync(resume: str, parameters: Dict[str, Any]) -> Dict[str, A
         json_result: Dict[str, Any] = json.loads(
             results.content.strip().strip("```json").strip("```")
         )
-        print("Result in evaluaterebadnn>> ",results.content[1:10])
+        # print("Result in evaluaterebadnn>> ",results.content[1:10])
         return json_result
     except Exception as E:
         raise ValueError(f"Error when evaluating resume, Reason: {E}")

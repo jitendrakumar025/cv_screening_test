@@ -1,6 +1,8 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from src.workers.resume_tasks import process_resume_task,struct_resume_task, process_batch_summary
+from src.workers.resume_tasks import process_resume_task,struct_resume_task
+from src.utils.redis_pubsub import get_redis_client
+
 from typing import List, Dict, Any
 import uuid
 import logging
@@ -22,6 +24,21 @@ class BatchStatusResponse(BaseModel):
     total_count: int
     message: str
     sse_channel: str
+
+def reset_batch_progress(batch_id: str):
+    """Reset batch progress counters for a fresh start"""
+    try:
+        redis_client = get_redis_client()
+        progress_key = f"batch_progress:{batch_id}"
+        completion_key = f"batch_completed:{batch_id}"
+        
+        # Delete existing progress and completion markers
+        redis_client.delete(progress_key, completion_key)
+        logger.info(f"🧹 Reset batch progress for {batch_id}")
+        
+    except Exception as e:
+        logger.error(f"Error resetting batch progress: {e}")
+
 
 @router.post("/start-resume-analysis", response_model=BatchStatusResponse)
 def start_resume_analysis(payload: ResumeAnalysisRequest):
@@ -61,12 +78,6 @@ def start_resume_analysis(payload: ResumeAnalysisRequest):
             )
             task_ids.append(task.id)
         
-        # Schedule batch summary task (runs after a delay to allow processing)
-        process_batch_summary.apply_async(
-            args=[batch_id, total_count],
-            countdown=10  # Wait 10 seconds before sending summary
-        )
-        
         logger.info(f"📤 Dispatched {len(task_ids)} tasks for batch {batch_id}")
         
         return BatchStatusResponse(
@@ -104,6 +115,9 @@ def start_resume_structuring(payload:ResumeStructRequest):
         batch_id = f"{batch_name}_{uuid.uuid4().hex[:8]}"
         total_count = len(resume_list)
         
+        # Reset batch progress to ensure clean start
+        reset_batch_progress(batch_id)
+
         logger.info(f"🚀 Starting batch {batch_id} with {total_count} resumes")
         
         # Dispatch all resume processing tasks
@@ -121,11 +135,7 @@ def start_resume_structuring(payload:ResumeStructRequest):
             )
             task_ids.append(task.id)
         
-        # Schedule batch summary task (runs after a delay to allow processing)
-        process_batch_summary.apply_async(
-            args=[batch_id, total_count],
-            countdown=10  # Wait 10 seconds before sending summary
-        )
+        
         
         logger.info(f"📤 Dispatched {len(task_ids)} tasks for batch {batch_id}")
 

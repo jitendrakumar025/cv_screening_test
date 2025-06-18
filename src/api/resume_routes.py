@@ -8,8 +8,12 @@ import logging
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+class ResumeItem(BaseModel):
+    resume_id: str
+    resume_text: str
+
 class ResumeAnalysisRequest(BaseModel):
-    resume_list: List[str]
+    resume_list: List[ResumeItem]
     parameters: Dict[str, Any]
     batch_name: str = None
 
@@ -43,10 +47,10 @@ def start_resume_analysis(payload: ResumeAnalysisRequest):
         
         # Dispatch all resume processing tasks
         task_ids = []
-        for index, resume_text in enumerate(resume_list, start=1):
+        for index, resume_item in enumerate(resume_list, start=1):
             # Create unique resume ID within batch
-            resume_id = f"{batch_id}_resume_{index}"
-            
+            resume_id = resume_item.resume_id
+            resume_text=resume_item.resume_text
             # Dispatch task to Celery
             task = process_resume_task.delay(
                 resume_text=resume_text,

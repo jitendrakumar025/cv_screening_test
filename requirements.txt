@@ -1,0 +1,8 @@
+fastapi
+hypercorn
+celery
+redis
+pydentic
+langchain_google_genai
+dotenv
+gevent

@@ -1,0 +1,45 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: resume_redis
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    restart: always
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: resume_web
+    volumes:
+      - ./localhost-cert.pem:/app/cert.pem:ro
+      - ./localhost-key.pem:/app/key.pem:ro
+    command: >
+      hypercorn main:app
+        --bind 0.0.0.0:8000
+        --certfile /app/cert.pem
+        --keyfile /app/key.pem
+    ports:
+      - '8000:8000'
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+    restart: always
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: resume_worker
+    command: celery -A src.celery_config.celery_app worker --loglevel=info --pool=gevent --concurrency=10
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+    restart: always
+
+volumes:
+  redis_data:

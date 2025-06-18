@@ -7,7 +7,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import SystemMessage, HumanMessage
 
 
-##################----------################
+################## ----------################
 def evaluate_resume_sync(resume: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
     try:
         # print("debug in evaluate_resume 1234")
@@ -29,18 +29,24 @@ def evaluate_resume_sync(resume: str, parameters: Dict[str, Any]) -> Dict[str, A
             The output must start and trail with triple backtics.
 
             ```json
-                {{"resume_score": [
-                {{ "parameter": "Name of the Criteria as provided in the evaluation criteria",
-                "score": 4, // Integer (0-10) based on resume match
-                "justification": "Resume mentions relevant experience with [tech/skill], but lacks [specific detail]."
-                }},
-                ... so on
-                {{
-                  "Additional Parameters":[{{"title":"additional parameter defined by recruiter","response":"whether resume satify this parameter or not [ALWAYS in `type` defined in PARAMETERS ] "}}.
+                {{"resume_score": {{
+                "rubrics": [
+                    {{ "parameter": "Name of the Criteria as provided in the evaluation criteria",
+                    "score": 4, // Integer (0-10) based on resume match
+                    "justification": "Resume mentions relevant experience with [tech/skill], but lacks [specific detail]."
+                    }},
+                    ... so on
+                 ],
+                 
+                "additional":[{{"title":"additional parameter defined by recruiter",
+                  "type":"This will be the same from the additional question given in rubrics additional paramter",
+                  "response":"based on the question if answer requires multiple answers you will answer here. Like for type MULTI_SELECT or TAG.",
+                  "answer":"You will answer here when the type is TEXT/TRUE_FALSE or any question which requires explanation. This will always be string not array of strings"
+                  }}.
                   ... so on for other additional fields
                   ]
                 }}
-                ], }}```
+                 }}```
             
         """
         prompt = ChatPromptTemplate.from_messages(

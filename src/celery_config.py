@@ -20,6 +20,7 @@ celery_app.conf.update(
     # Task routing and execution
     task_routes={
         'src.workers.resume_tasks.process_resume_task': {'queue': 'resume_analysis'},
+        'src.workers.resume_tasks.struct_resume_task': {'queue': 'resume_structuring'},
     },
     
     # Performance optimizations

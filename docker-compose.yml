@@ -21,8 +21,6 @@ services:
     command: >
       hypercorn main:app
         --bind 0.0.0.0:8000
-        --certfile /app/cert.pem
-        --keyfile /app/key.pem
         --workers 2
         --worker-class asyncio
     ports:
@@ -42,7 +40,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: resume_worker_1
-    command: celery -A src.celery_config.celery_app worker --loglevel=info --pool=threads --concurrency=10 --queues=resume_analysis --hostname=worker1@%h
+    command: celery -A src.celery_config.celery_app worker --loglevel=info --pool=threads --concurrency=10 --queues=resume_analysis,resume_structuring --hostname=worker1@%h
     environment:
       - REDIS_URL=redis://redis:6379/0
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
@@ -63,7 +61,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: resume_worker_2
-    command: celery -A src.celery_config.celery_app worker --loglevel=info --pool=threads --concurrency=10 --queues=resume_analysis --hostname=worker2@%h
+    command: celery -A src.celery_config.celery_app worker --loglevel=info --pool=threads --concurrency=10 --queues=resume_analysis,resume_structuring --hostname=worker2@%h
     environment:
       - REDIS_URL=redis://redis:6379/0
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}

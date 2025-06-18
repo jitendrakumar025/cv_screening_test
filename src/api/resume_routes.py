@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from src.workers.resume_tasks import process_resume_task, process_batch_summary
+from src.workers.resume_tasks import process_resume_task,struct_resume_task, process_batch_summary
 from typing import List, Dict, Any
 import uuid
 import logging
@@ -36,8 +36,8 @@ def start_resume_analysis(payload: ResumeAnalysisRequest):
         if not resume_list:
             raise HTTPException(status_code=400, detail="Resume list cannot be empty")
         
-        if len(resume_list) > 2000:  # Safety limit
-            raise HTTPException(status_code=400, detail="Maximum 2000 resumes per batch")
+        if len(resume_list) > 1000:  # Safety limit
+            raise HTTPException(status_code=400, detail="Maximum 1000 resumes per batch")
         
         # Generate unique batch ID
         batch_id = f"{batch_name}_{uuid.uuid4().hex[:8]}"
@@ -79,6 +79,66 @@ def start_resume_analysis(payload: ResumeAnalysisRequest):
     except Exception as e:
         logger.error(f"Error starting resume analysis: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to start analysis: {str(e)}")
+
+class ResumeStructRequest(BaseModel):
+    resume_list: List[ResumeItem]
+    batch_name: str = None
+
+@router.post("/start-resume-structuring",response_model=BatchStatusResponse)
+def start_resume_structuring(payload:ResumeStructRequest):
+    """
+    Start processing a batch of resumes with optimized concurrency to get structured resume
+    """
+
+    try:
+        resume_list = payload.resume_list
+        batch_name = payload.batch_name or "resume_batch"
+        
+        if not resume_list:
+            raise HTTPException(status_code=400, detail="Resume list cannot be empty")
+        
+        if len(resume_list) > 1000:  # Safety limit
+            raise HTTPException(status_code=400, detail="Maximum 1000 resumes per batch")
+        
+        # Generate unique batch ID
+        batch_id = f"{batch_name}_{uuid.uuid4().hex[:8]}"
+        total_count = len(resume_list)
+        
+        logger.info(f"🚀 Starting batch {batch_id} with {total_count} resumes")
+        
+        # Dispatch all resume processing tasks
+        task_ids = []
+        for index, resume_item in enumerate(resume_list, start=1):
+            # Create unique resume ID within batch
+            resume_id = resume_item.resume_id
+            resume_text=resume_item.resume_text
+            # Dispatch task to Celery
+            task = struct_resume_task.delay(
+                resume_text=resume_text,
+                resume_id=resume_id,
+                batch_id=batch_id,
+                total_count=total_count
+            )
+            task_ids.append(task.id)
+        
+        # Schedule batch summary task (runs after a delay to allow processing)
+        process_batch_summary.apply_async(
+            args=[batch_id, total_count],
+            countdown=10  # Wait 10 seconds before sending summary
+        )
+        
+        logger.info(f"📤 Dispatched {len(task_ids)} tasks for batch {batch_id}")
+
+        return BatchStatusResponse(
+            batch_id=batch_id,
+            total_count=total_count,
+            message=f"Resume processing batch '{batch_id}' dispatched successfully with {total_count} resumes",
+            sse_channel=f"resume_status_{batch_id}"
+        )
+
+    except Exception as e:
+        logger.error(f"Error starting resume analysis: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to start analysis: {str(e)}")  
 
 @router.get("/batch-status/{batch_id}")
 def get_batch_status(batch_id: str):

@@ -27,8 +27,8 @@ app.include_router(resume_routes.router)
 if __name__ == "__main__":
     config = Config()
     config.bind = ["0.0.0.0:8000"]
-    config.certfile = r"C:\\VsCode\\localhost-cert.pem"
-    config.keyfile = r"C:\\VsCode\\localhost-key.pem"
+    # config.certfile = r"C:\\VsCode\\localhost-cert.pem"
+    # config.keyfile = r"C:\\VsCode\\localhost-key.pem"
     config.alpn_protocols = ["h2", "http/1.1"]  # enable HTTP/2
     # You can tweak h2_max_concurrent_streams here if needed:
     # config.h2_max_concurrent_streams = 100

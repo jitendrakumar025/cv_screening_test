@@ -49,14 +49,7 @@ def evaluate_resume_sync(resume: str, parameters: Dict[str, Any]) -> Dict[str, A
                  }}```
             
         """
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                SystemMessage(content=AnalysisPrompt.SYSTEM_PROMPT),
-                HumanMessage(content=PROMPT),
-            ]
-        )
 
-        chain = prompt | llm
         results = llm.invoke(PROMPT)
         json_result: Dict[str, Any] = json.loads(
             results.content.strip().strip("```json").strip("```")
@@ -86,3 +79,6 @@ def evaluate_resume_sync(resume: str, parameters: Dict[str, Any]) -> Dict[str, A
 #     results = await asyncio.gather(*tasks)
 #     print("ficnscahs__>> ",results)
 #     return results
+
+
+

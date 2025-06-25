@@ -8,4 +8,10 @@ src/utils/redis_pubsub copy.py
 src/workers/resume_tasks copy.py
 src/celery_config copy.py
 
+test.py
+first_10_resumes.json
+
+localhost-cert.pem
+localhost-key.pem
+
 docker-compose copy.yml

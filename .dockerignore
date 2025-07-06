@@ -1,0 +1,15 @@
+test.py
+first_10_resumes.json
+
+/KMS
+__pycache__
+__pycache__/
+*/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+venv/
+# Ignore Git files
+.git
+.gitignore

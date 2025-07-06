@@ -33,12 +33,14 @@ celery_app.conf.update(
     task_max_retries=3,
     
     # Result backend settings
-    result_expires=3600,  # Results expire after 1 hour
+    result_expires=300,  # Results expire after 5 minutes
     result_persistent=True,  # Persist results to Redis
     
     # Memory optimization
     worker_max_tasks_per_child=100,  # Restart worker after 100 tasks to prevent memory leaks
     
     # Concurrency settings
-    worker_concurrency=10,  # Match your desired concurrency level
+    worker_concurrency=5,  # Match your desired concurrency level
+    broker_pool_limit=5,  # Limit broker connections for performance
+
 )

@@ -9,7 +9,7 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 connection_pool = ConnectionPool.from_url(
     REDIS_URL,
     decode_responses=True,
-    max_connections=20,
+    max_connections=15,
     retry_on_timeout=True,
     socket_keepalive=True,
     socket_keepalive_options={}
@@ -95,7 +95,7 @@ def get_batch_progress(batch_id):
         print(f"Error getting batch progress: {e}")
         return 0
 
-def cleanup_batch_data(batch_id, max_age_seconds=3600):
+def cleanup_batch_data(batch_id, max_age_seconds=300):
     """Clean up old batch data"""
     try:
         # Clean up processing locks

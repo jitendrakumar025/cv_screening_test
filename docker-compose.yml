@@ -10,26 +10,27 @@ services:
     command: >
       hypercorn main:app
         --bind 0.0.0.0:8000
-        --workers 2
+        --workers 1
         --worker-class asyncio
     ports:
       - '8000:8000'
     environment:
-      - REDIS_URL=redis://default:IOcncAj6PRAtCO5BlFtzjtwK0JIASbQs@redis-17014.c84.us-east-1-2.ec2.redns.redis-cloud.com:17014
+      - REDIS_URL=${REDIS_URL}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - REDIS_MAX_CONNECTIONS=${REDIS_MAX_CONNECTIONS}
     env_file:
       - .env
     restart: always
 
   # Scale workers horizontally for better performance
-  worker-1:
+  worker:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: resume_worker_1
-    command: celery -A src.celery_config.celery_app worker --loglevel=info --pool=threads --concurrency=10 --queues=resume_analysis,resume_structuring --hostname=worker1@%h
+    command: celery -A src.celery_config.celery_app worker --loglevel=info --pool=threads --concurrency=4 --queues=resume_analysis,resume_structuring --hostname=worker@%h
     environment:
-      - REDIS_URL=redis://default:IOcncAj6PRAtCO5BlFtzjtwK0JIASbQs@redis-17014.c84.us-east-1-2.ec2.redns.redis-cloud.com:17014
+      - REDIS_URL=${REDIS_URL}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
     env_file:
       - .env
@@ -41,25 +42,7 @@ services:
         reservations:
           memory: 512M
 
-  worker-2:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: resume_worker_2
-    command: celery -A src.celery_config.celery_app worker --loglevel=info --pool=threads --concurrency=10 --queues=resume_analysis,resume_structuring --hostname=worker2@%h
-    environment:
-      - REDIS_URL=redis://default:IOcncAj6PRAtCO5BlFtzjtwK0JIASbQs@redis-17014.c84.us-east-1-2.ec2.redns.redis-cloud.com:17014
-      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
-    env_file:
-      - .env
-    restart: always
-    deploy:
-      resources:
-        limits:
-          memory: 1G
-        reservations:
-          memory: 512M
-
+  
   # Optional: Add flower for monitoring (remove in production)
   flower:
     build:
@@ -70,7 +53,7 @@ services:
     ports:
       - '5555:5555'
     environment:
-      - REDIS_URL=redis://default:IOcncAj6PRAtCO5BlFtzjtwK0JIASbQs@redis-17014.c84.us-east-1-2.ec2.redns.redis-cloud.com:17014
+      - REDIS_URL=${REDIS_URL}
     env_file:
       - .env
     restart: always

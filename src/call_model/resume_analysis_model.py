@@ -32,7 +32,7 @@ def evaluate_resume_sync(resume: str, parameters: Dict[str, Any]) -> Dict[str, A
                 {{"resume_score": {{
                 "summary": "A brief summary of the resume evaluation, highlighting key strengths and weaknesses.",
                 "rubrics": [
-                    {{ "parameter": "Name of the Criteria as provided in the evaluation criteria",
+                    {{ "name": "Name of the Criteria as provided in the evaluation criteria",
                     "score": 4, // Integer (0-10) based on resume match
                     "justification": "Resume mentions relevant experience with [tech/skill], but lacks [specific detail]."
                     }},

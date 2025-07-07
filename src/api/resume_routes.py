@@ -49,6 +49,7 @@ def start_resume_analysis(payload: ResumeAnalysisRequest):
         resume_list = payload.resume_list
         parameters = payload.parameters
         batch_name = payload.batch_name or "resume_batch"
+        batch_id  =payload.batch_id
         
         if not resume_list:
             raise HTTPException(status_code=400, detail="Resume list cannot be empty")
@@ -57,7 +58,7 @@ def start_resume_analysis(payload: ResumeAnalysisRequest):
             raise HTTPException(status_code=400, detail="Maximum 1000 resumes per batch")
         
         # Generate unique batch ID
-        batch_id = f"{batch_name}_{uuid.uuid4().hex[:8]}"
+        # batch_id = f"{batch_name}_{uuid.uuid4().hex[:8]}"
         total_count = len(resume_list)
         
         logger.info(f"🚀 Starting batch {batch_id} with {total_count} resumes")
@@ -94,6 +95,7 @@ def start_resume_analysis(payload: ResumeAnalysisRequest):
 class ResumeStructRequest(BaseModel):
     resume_list: List[ResumeItem]
     batch_name: str = None
+    batch_id: str = None  # Optional batch ID for resuming or tracking
 
 @router.post("/start-resume-structuring",response_model=BatchStatusResponse)
 def start_resume_structuring(payload:ResumeStructRequest):
@@ -104,7 +106,10 @@ def start_resume_structuring(payload:ResumeStructRequest):
     try:
         resume_list = payload.resume_list
         batch_name = payload.batch_name or "resume_batch"
+        batch_id  =payload.batch_id
         
+        print(f"🚀 Starting batch {batch_id} with {len(resume_list)} resumes")
+
         if not resume_list:
             raise HTTPException(status_code=400, detail="Resume list cannot be empty")
         
@@ -112,7 +117,7 @@ def start_resume_structuring(payload:ResumeStructRequest):
             raise HTTPException(status_code=400, detail="Maximum 1000 resumes per batch")
         
         # Generate unique batch ID
-        batch_id = f"{batch_name}_{uuid.uuid4().hex[:8]}"
+        # batch_id = f"{batch_name}_{uuid.uuid4().hex[:8]}"
         total_count = len(resume_list)
         
         # Reset batch progress to ensure clean start

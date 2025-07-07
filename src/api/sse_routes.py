@@ -17,7 +17,7 @@ def stream_resume_status_by_batch(batch_id: str):
         try:
             channel = f"resume_status_{batch_id}"
             pubsub = subscribe_to_channel(channel)
-            
+            print(f"🔗 Subscribed to channel: {channel} for batch {batch_id}")
             # Send initial connection confirmation
             yield f"data: {json.dumps({'action': 'connected', 'batch_id': batch_id, 'channel': channel})}\n\n"
             

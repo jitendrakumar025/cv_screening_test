@@ -237,9 +237,6 @@ def struct_resume_task(self, resume_text, resume_id, batch_id, total_count):
                     "batch_progress": f"{current_count}/{total_count}"
                 }))
                 
-                 # Increment progress and check for batch completion
-                increment_batch_progress(batch_id, total_count, redis_client)
-                
                 return {"resume_result": cached_result, "cached": True}
 
         # Check if result already exists in cache
@@ -261,9 +258,6 @@ def struct_resume_task(self, resume_text, resume_id, batch_id, total_count):
                     "cached": True,
                     "batch_progress": f"{current_count}/{total_count}"
                 }))
-
-             # Increment progress and check for batch completion
-            increment_batch_progress(batch_id, total_count, redis_client)
 
             return {"resume_result": cached_result, "cached": True}
 
@@ -307,7 +301,7 @@ def struct_resume_task(self, resume_text, resume_id, batch_id, total_count):
                     "action": "result",
                     "resume_id": resume_id,
                     "batch_id": batch_id,
-                    "resume_result": cached_result,
+                    "resume_result": resume_result,
                     "processing_time": time.time() - start_time,
                     "cached": False,
                     "batch_progress": f"{current_count}/{total_count}"

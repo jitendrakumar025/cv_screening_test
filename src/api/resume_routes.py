@@ -194,4 +194,4 @@ def cleanup_batch(batch_id: str):
         
     except Exception as e:
         logger.error(f"Error cleaning up batch: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to cleanup: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to cleanup: {str(e)}") 

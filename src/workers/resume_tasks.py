@@ -237,7 +237,6 @@ def struct_resume_task(self, resume_text, resume_id, batch_id, total_count):
                     "batch_progress": f"{current_count}/{total_count}"
                 }))
                 
-                
                 return {"resume_result": cached_result, "cached": True}
 
         # Check if result already exists in cache

@@ -25,8 +25,8 @@ def process_resume_task(self, resume_text, parameters, resume_id, batch_id, tota
     Process a single resume with deduplication and comprehensive error handling
     """
     redis_client = get_redis_client()
-    # status_channel = f"resume_status_{batch_id}"
-    status_channel = f"resume_status"
+    status_channel = f"resume_status_{batch_id}"
+    # status_channel = f"resume_status"
     # Generate unique hash for deduplication
     resume_hash = generate_resume_hash(resume_text, parameters)
     processing_key = f"processing:{resume_hash}"
@@ -194,8 +194,8 @@ def struct_resume_task(self, resume_text, resume_id, batch_id, total_count):
         total_count: Total number of resumes in the batch
     """
     redis_client = get_redis_client()
-    # status_channel = f"resume_status_{batch_id}"
-    status_channel = f"resume_status"
+    status_channel = f"resume_status_{batch_id}"
+    # status_channel = f"resume_status"
 
     # Generate unique hash for deduplication
     resume_hash = generate_resume_hash(resume_text, resume_id)
@@ -258,6 +258,7 @@ def struct_resume_task(self, resume_text, resume_id, batch_id, total_count):
                     "cached": True,
                     "batch_progress": f"{current_count}/{total_count}"
                 }))
+
 
             return {"resume_result": cached_result, "cached": True}
 

@@ -18,6 +18,7 @@ class ResumeAnalysisRequest(BaseModel):
     resume_list: List[ResumeItem]
     parameters: Dict[str, Any]
     batch_name: str = None
+    batch_id: str = None  # Optional batch ID for resuming or tracking
 
 class BatchStatusResponse(BaseModel):
     batch_id: str

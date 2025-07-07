@@ -47,7 +47,7 @@ def process_resume_task(self, resume_text, parameters, resume_id, batch_id, tota
                 batch_id, total_count, redis_client)
             
             publish_message(status_channel, json.dumps({
-                "action": "result",
+                "action": "analysis/result",
                 "resume_id": resume_id,
                 "batch_id": batch_id,
                 "resume_result": cached_result,
@@ -81,7 +81,7 @@ def process_resume_task(self, resume_text, parameters, resume_id, batch_id, tota
                 
                 # Publish the cached result
                 publish_message(status_channel, json.dumps({
-                    "action": "result",
+                    "action": "analysis/result",
                     "resume_id": resume_id,
                     "batch_id": batch_id,
                     "resume_result": cached_result,
@@ -103,7 +103,7 @@ def process_resume_task(self, resume_text, parameters, resume_id, batch_id, tota
         
         # Publish processing start message
         publish_message(status_channel, json.dumps({
-            "action": "status",
+            "action": "analysis/status",
             "message": f"Processing Resume {resume_id}/{total_count}",
             "resume_id": resume_id,
             "batch_id": batch_id,
@@ -127,7 +127,7 @@ def process_resume_task(self, resume_text, parameters, resume_id, batch_id, tota
         
         # Publish success result
         publish_message(status_channel, json.dumps({
-            "action": "result",
+            "action": "analysis/result",
             "resume_id": resume_id,
             "batch_id": batch_id,
             "resume_result": resume_result,
@@ -156,7 +156,7 @@ def process_resume_task(self, resume_text, parameters, resume_id, batch_id, tota
         
         # Publish error message
         publish_message(status_channel, json.dumps({
-            "action": "error",
+            "action": "analysis/error",
             "message": f"Failed to process resume {resume_id}: {str(e)}",
             "resume_id": resume_id,
             "batch_id": batch_id,
@@ -228,7 +228,7 @@ def struct_resume_task(self, resume_text, resume_id, batch_id, total_count):
                 
                 # Publish the cached result
                 publish_message(status_channel, json.dumps({
-                    "action": "result",
+                    "action": "struct/result",
                     "resume_id": resume_id,
                     "batch_id": batch_id,
                     "resume_result": cached_result,
@@ -251,7 +251,7 @@ def struct_resume_task(self, resume_text, resume_id, batch_id, total_count):
                 
                 # Publish the cached result
             publish_message(status_channel, json.dumps({
-                    "action": "result",
+                    "action": "struct/result",
                     "resume_id": resume_id,
                     "batch_id": batch_id,
                     "resume_result": cached_result,
@@ -271,7 +271,7 @@ def struct_resume_task(self, resume_text, resume_id, batch_id, total_count):
 
         # Publish processing start message
         publish_message(status_channel, json.dumps({
-            "action": "status",
+            "action": "struct/status",
             "message": f"Processing Resume {resume_id}/{total_count}",
             "resume_id": resume_id,
             "batch_id": batch_id,
@@ -300,7 +300,7 @@ def struct_resume_task(self, resume_text, resume_id, batch_id, total_count):
                 
                 # Publish the cached result
         publish_message(status_channel, json.dumps({
-                    "action": "result",
+                    "action": "struct/result",
                     "resume_id": resume_id,
                     "batch_id": batch_id,
                     "resume_result": resume_result,
@@ -331,7 +331,7 @@ def struct_resume_task(self, resume_text, resume_id, batch_id, total_count):
 
         # Publish error message
         publish_message(status_channel, json.dumps({
-            "action": "error",
+            "action": "struct/error",
             "message": f"Failed to process resume {resume_id}: {str(e)}",
             "resume_id": resume_id,
             "batch_id": batch_id,

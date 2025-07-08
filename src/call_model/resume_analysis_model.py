@@ -41,7 +41,7 @@ def evaluate_resume_sync(resume: str, parameters: Dict[str, Any]) -> Dict[str, A
                  
                 "additional":[{{"title":"additional parameter defined by recruiter",
                   "type":"This will be the same from the additional question given in rubrics additional paramter",
-                  "response":"based on the question if answer requires multiple answers you will answer here. Like for type MULTI_SELECT or TAG.",
+                  "response": ["based on the question if answer requires multiple answers you will answer here in array of strings (ALWAYS). Like for type MULTI_SELECT or TAG."]
                   "answer":"You will answer here when the type is TEXT/TRUE_FALSE or any question which requires explanation. This will always be string not array of strings"
                   }}.
                   ... so on for other additional fields

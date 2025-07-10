@@ -4,10 +4,10 @@ from celery import Celery
 redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
 
 celery_app = Celery(
-    "resume_tasks",
+    "celery_tasks",
     broker=redis_url,
     backend=redis_url,
-    include=["src.workers.resume_tasks"],
+    include=["src.workers.celery_tasks"],
 ) 
 
 # Optimized configuration for high-volume processing
@@ -19,8 +19,9 @@ celery_app.conf.update(
     
     # Task routing and execution
     task_routes={
-        'src.workers.resume_tasks.process_resume_task': {'queue': 'resume_analysis'},
-        'src.workers.resume_tasks.struct_resume_task': {'queue': 'resume_structuring'},
+        'src.workers.celery_tasks.process_resume_task': {'queue': 'resume_analysis'},
+        'src.workers.celery_tasks.struct_resume_task': {'queue': 'resume_structuring'},
+        'src.workers.celery_tasks.pool_analysis_task':{'queue':'pool_analysis'}
     },
     
     # Performance optimizations

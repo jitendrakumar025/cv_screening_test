@@ -1,11 +1,6 @@
 from src.llm_utils.initialize_llm import initialize_llm
-from src.prompts.prompts import AnalysisPrompt
-from typing import Dict, Any, List
+from typing import Dict, Any
 import json
-import asyncio
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.messages import SystemMessage, HumanMessage
-
 
 ################## ----------################
 def extract_profile_data(resume_text:str):

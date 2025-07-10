@@ -1,6 +1,7 @@
 from src.celery_config import celery_app
 from src.call_model.resume_analysis_model import evaluate_resume_sync
 from src.call_model.resume_structured_model import extract_profile_data
+from src.call_model.talentPool_analysis_model import evaluate_talentPool_sync
 from src.utils.redis_pubsub import publish_message, get_redis_client, increment_batch_progress
 import json
 import logging
@@ -369,6 +370,80 @@ def struct_resume_task(self, resume_text, resume_id, batch_id, total_count):
 
         logger.info(f"🏁 Task completed for resume {resume_id}")
 
+
+@celery_app.task(bind=True, max_retries=3, default_retry_delay=60,ignore_result=True)
+def pool_analysis_task(self,profile_analysis,parameters,profile_id,batch_id,total_count):
+    """This task is for talent pool advanced search & filtering and scoring.
+
+    Args:
+        profile_analysis (_type_): _description_
+        parameters (_type_): _description_
+        profile_id (_type_): _description_
+    """
+    
+    redis_client=get_redis_client()
+    status_channel=f"pool_status_{batch_id}"
+
+    logger.info(f"🚀 Starting processing for resume {profile_id}/{total_count} (batch: {batch_id})")
+    start_time=time.time()
+    try:
+         # Publish processing start message
+        publish_message(status_channel, json.dumps({
+            "action": "pool/status",
+            "message": f"Processing Resume {profile_id}/{total_count}",
+            "profile_id": profile_id,
+            "batch_id": batch_id,
+            "progress": 0
+        }))
+
+        pool_profile_result= evaluate_talentPool_sync(json.dumps(profile_analysis),parameters)
+
+        processing_time=time.time()-start_time
+
+        current_count, is_complete=increment_batch_progress(batch_id,total_count,redis_client)
+
+        publish_message(status_channel, json.dumps({
+            "action": "analysis/result",
+            "profile_id": profile_id,
+            "pool_result": pool_profile_result,
+            "processing_time": processing_time,
+            "cached": False,
+            "batch_progress": f"{current_count}/{total_count}"
+        }))
+
+        logger.info(f"📤 Results published for resume {profile_id}")
+
+       
+
+    except Exception as e:
+        processing_time=time.time()-start_time
+        logger.error(f"❌ Error processing resume {profile_id}: {str(e)}")
+
+        publish_message(status_channel,json.dumps({
+            "action":"pool/error",
+            "message":f"Failed to process profile {profile_id}:{str(e)}",
+            "profile_id":profile_id,
+            "batch_id":batch_id,
+            "processing_time":processing_time,
+            "error_type":type(e).__name__
+        }))
+
+        # Retry logic for transient errors
+        if self.request.retries < self.max_retries:
+            logger.warning(
+                f"🔄 Retrying resume {profile_id} (attempt {self.request.retries + 1})")
+            raise self.retry(countdown=60 * (self.request.retries + 1))
+
+        # Final failure after all retries
+        logger.error(
+            f"💀 Final failure for resume {profile_id} after {self.request.retries} retries")
+        raise
+
+    finally:
+        
+        logger.info(f"🏁 Task completed for resume {profile_id}")
+
+    
 
 @celery_app.task
 def cleanup_batch_progress(batch_id):

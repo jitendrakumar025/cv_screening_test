@@ -11,8 +11,9 @@ use_ssl = REDIS_URL.startswith("rediss://")
 connection_pool = ConnectionPool.from_url(
     REDIS_URL,
     decode_responses=True,
-    max_connections=20,
+    max_connections=REDIS_MAX_CONNECTIONS,
     retry_on_timeout=True,
+    retry_on_error=[redis.ConnectionError, redis.TimeoutError],
     socket_keepalive=True,
     ssl_cert_reqs='required' if use_ssl else None,
     ssl_ca_certs="/etc/ssl/certs/ca-certificates.crt"
@@ -26,9 +27,18 @@ def get_redis_client():
     return r
 
 def publish_message(channel, message):
-    """Publish message to Redis channel"""
+    """Publish message to Redis channel with error handling"""
     try:
-        r.publish(channel, message)
+        with r.pipeline() as pipe:
+            pipe.publish(channel, message)
+            pipe.execute()
+    except (redis.ConnectionError, redis.TimeoutError) as e:
+        print(f"Redis connection error in publish_message: {e}")
+        # Retry once
+        try:
+            r.publish(channel, message)
+        except Exception as retry_e:
+            print(f"Retry failed in publish_message: {retry_e}")
     except Exception as e:
         print(f"Error publishing message: {e}")
 
@@ -89,34 +99,57 @@ def increment_batch_progress(batch_id, total_count, redis_client):
         return current_count, current_count >= total_count
 
 def get_batch_progress(batch_id):
-    """Get processing progress for a batch"""
+    """Get processing progress for a batch with connection reuse"""
     try:
-        progress_key = f"batch_progress:{batch_id}"
-        count = r.get(progress_key)
-        return int(count) if count else 0
+        # Use pipeline for batch operations
+        with r.pipeline() as pipe:
+            # Count completed tasks
+            pattern = f"result:*batch_{batch_id}*"
+            pipe.keys(pattern)
+            results = pipe.execute()
+            return len(results[0]) if results else 0
     except Exception as e:
         print(f"Error getting batch progress: {e}")
         return 0
 
 def cleanup_batch_data(batch_id, max_age_seconds=3600):
-    """Clean up old batch data"""
+    """Clean up old batch data with batch operations"""
     try:
-        # Clean up processing locks
-        processing_pattern = f"processing:*batch_{batch_id}*"
-        processing_keys = r.keys(processing_pattern)
-        if processing_keys:
-            r.delete(*processing_keys)
-        
-        # Clean up batch progress
-        progress_key = f"batch_progress:{batch_id}"
-        completion_key = f"batch_completed:{batch_id}"
-        r.delete(progress_key, completion_key)
-        
-        # Optionally clean up old results
-        # result_pattern = f"result:*batch_{batch_id}*"
-        # result_keys = r.keys(result_pattern)
-        # if result_keys:
-        #     r.delete(*result_keys)
-        
+        # Use pipeline for batch operations
+        with r.pipeline() as pipe:
+            # Clean up processing locks
+            processing_pattern = f"processing:*batch_{batch_id}*"
+            processing_keys = r.keys(processing_pattern)
+            if processing_keys:
+                pipe.delete(*processing_keys)
+            
+            # Clean up old results if needed
+            # result_pattern = f"result:*batch_{batch_id}*"
+            # result_keys = r.keys(result_pattern)
+            # if result_keys:
+            #     pipe.delete(*result_keys)
+            
+            pipe.execute()
+            
     except Exception as e:
         print(f"Error cleaning up batch data: {e}")
+
+
+def close_connections():
+    """Close all Redis connections gracefully"""
+    try:
+        connection_pool.disconnect()
+        print("Redis connections closed successfully")
+    except Exception as e:
+        print(f"Error closing Redis connections: {e}")        
+
+
+# Health check function
+def redis_health_check():
+    """Check Redis connection health"""
+    try:
+        r.ping()
+        return True
+    except Exception as e:
+        print(f"Redis health check failed: {e}")
+        return False

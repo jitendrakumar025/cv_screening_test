@@ -198,7 +198,7 @@ def process_resume_task(self, resume_text, parameters, resume_id, batch_id, tota
         logger.info(f"🏁 Task completed for resume {resume_id}")
 
 
-@celery_app.task(bind=True, max_retries=3, default_retry_delay=60)
+@celery_app.task(bind=True, max_retries=100, default_retry_delay=3)
 def struct_resume_task(self, resume_text, resume_id, batch_id, total_count):
     """
     Process a single resume with deduplication and comprehensive error handling
@@ -228,11 +228,7 @@ def struct_resume_task(self, resume_text, resume_id, batch_id, total_count):
                 f"🔄 Resume {resume_id} already being processed (hash: {resume_hash[:8]})")
 
             # Wait for the other task to complete and get result
-            max_wait = 300  # 5 minutes max wait
-            waited = 0
-            while redis_client.exists(processing_key) and waited < max_wait:
-                time.sleep(2)
-                waited += 2
+            raise self.retry(countdown=3)
 
             # Check if result is available
             if redis_client.exists(result_key):
@@ -304,7 +300,7 @@ def struct_resume_task(self, resume_text, resume_id, batch_id, total_count):
         # logger.info(f"📊 Result: {len(resume_result.get('resume_score', []))} criteria evaluated")
 
         # Cache the result (expires in 1 hour)
-        redis_client.setex(result_key, 3600, json.dumps(resume_result))
+        redis_client.setex(result_key, 300, json.dumps(resume_result))
 
         # Remove processing lock
         redis_client.delete(processing_key)

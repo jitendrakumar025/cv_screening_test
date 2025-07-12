@@ -2,8 +2,7 @@ fastapi
 hypercorn
 celery
 redis
-pydentic
+pydantic
 langchain_google_genai
-dotenv
+python-dotenv
 gevent
-flower

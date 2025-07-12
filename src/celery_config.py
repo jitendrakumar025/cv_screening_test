@@ -39,7 +39,7 @@ celery_app.conf.update(
     result_persistent=True,  # Persist results to Redis
     
     # Memory optimization
-    worker_max_tasks_per_child=100,  # Restart worker after 100 tasks to prevent memory leaks
+    worker_max_tasks_per_child=50,  # Restart worker after 50 tasks to prevent memory leaks
     
     # Concurrency settings
     worker_concurrency=10,  # Match your desired concurrency level

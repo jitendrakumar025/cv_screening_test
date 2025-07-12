@@ -31,7 +31,9 @@ def stream_resume_status_by_batch(batch_id: str):
                     except json.JSONDecodeError:
                         # If parsing fails, send raw message
                         yield f"data: {message['data']}\n\n"
-                        
+        except GeneratorExit:
+            # Client disconnected, clean up
+            print(f"❌ Client disconnected from SSE stream for batch {batch_id}")                  
         except Exception as e:
             logger.error(f"SSE stream error for batch {batch_id}: {str(e)}")
             error_msg = {
@@ -58,7 +60,7 @@ def stream_resume_status_by_batch(batch_id: str):
         }
     )
 @router.get("/stream/pool-status/{batch_id}")
-def stream_resume_status_by_batch(batch_id: str):
+def stream_pool_status_by_batch(batch_id: str):
     """
     Stream pool profile processing status for a specific batch
     """
@@ -81,7 +83,9 @@ def stream_resume_status_by_batch(batch_id: str):
                     except json.JSONDecodeError:
                         # If parsing fails, send raw message
                         yield f"data: {message['data']}\n\n"
-                        
+        except GeneratorExit:
+            # Client disconnected, clean up
+            print(f"❌ Client disconnected from SSE stream for batch {batch_id}")                
         except Exception as e:
             logger.error(f"SSE stream error for batch {batch_id}: {str(e)}")
             error_msg = {
@@ -126,7 +130,9 @@ def stream_resume_status():
                         yield f"data: {json.dumps(data)}\n\n"
                     except json.JSONDecodeError:
                         yield f"data: {message['data']}\n\n"
-                        
+        except GeneratorExit:
+            # Client disconnected, clean up
+            print(f"❌ Client disconnected from SSE stream")                  
         except Exception as e:
             logger.error(f"SSE stream error: {str(e)}")
             error_msg = {

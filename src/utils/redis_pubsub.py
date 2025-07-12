@@ -1,9 +1,11 @@
 import redis
 import os
 from redis.connection import ConnectionPool
-import json
+import json,ssl
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
+
+use_ssl = REDIS_URL.startswith("rediss://")
 
 # Create connection pool for better performance
 connection_pool = ConnectionPool.from_url(
@@ -12,8 +14,9 @@ connection_pool = ConnectionPool.from_url(
     max_connections=20,
     retry_on_timeout=True,
     socket_keepalive=True,
-    socket_keepalive_options={}
-)
+    ssl_cert_reqs='required' if use_ssl else None,
+    ssl_ca_certs="/etc/ssl/certs/ca-certificates.crt"
+    )
 
 # Redis connection with connection pooling
 r = redis.Redis(connection_pool=connection_pool)
@@ -31,7 +34,7 @@ def publish_message(channel, message):
 
 def subscribe_to_channel(channel):
     """Subscribe to Redis channel"""
-    pubsub = r.pubsub()
+    pubsub = r.pubsub(ignore_subscribe_messages=True)
     pubsub.subscribe(channel)
     return pubsub
 

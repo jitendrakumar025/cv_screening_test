@@ -1,15 +1,4 @@
 services:
-  redis:
-    image: redis:7-alpine
-    container_name: resume_redis
-    ports:
-      - '6379:6379'
-    volumes:
-      - redis_data:/data
-    restart: always
-    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru
-    # Optimize Redis for high-throughput
-
   web:
     build:
       context: .
@@ -26,12 +15,10 @@ services:
     ports:
       - '8000:8000'
     environment:
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_URL=${REDIS_URL}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
     env_file:
       - .env
-    depends_on:
-      - redis
     restart: always
 
   # Scale workers horizontally for better performance
@@ -40,14 +27,12 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: resume_worker_1
-    command: celery -A src.celery_config.celery_app worker --loglevel=info --pool=threads --concurrency=10 --queues=resume_analysis,resume_structuring,pool_analysis --hostname=worker1@%h
+    command: celery -A src.celery_config.celery_app worker --loglevel=info -E --pool=threads --concurrency=10 --queues=resume_analysis,resume_structuring,pool_analysis --hostname=worker1@%h
     environment:
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_URL=${REDIS_URL}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
     env_file:
       - .env
-    depends_on:
-      - redis
     restart: always
     deploy:
       resources:
@@ -61,14 +46,12 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: resume_worker_2
-    command: celery -A src.celery_config.celery_app worker --loglevel=info --pool=threads --concurrency=10 --queues=resume_analysis,resume_structuring,pool_analysis --hostname=worker2@%h
+    command: celery -A src.celery_config.celery_app worker --loglevel=info -E --pool=threads --concurrency=10 --queues=resume_analysis,resume_structuring,pool_analysis --hostname=worker2@%h
     environment:
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_URL=${REDIS_URL}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
     env_file:
       - .env
-    depends_on:
-      - redis
     restart: always
     deploy:
       resources:
@@ -77,24 +60,5 @@ services:
         reservations:
           memory: 512M
 
-  # Optional: Add flower for monitoring (remove in production)
-  flower:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: resume_flower
-    command: celery -A src.celery_config.celery_app flower --port=5555
-    ports:
-      - '5555:5555'
-    environment:
-      - REDIS_URL=redis://redis:6379/0
-    env_file:
-      - .env
-    depends_on:
-      - redis
-    restart: always
-    profiles:
-      - monitoring
 
-volumes:
-  redis_data:
+

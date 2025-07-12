@@ -105,8 +105,13 @@ def start_resume_analysis(payload: ResumeAnalysisRequest):
             status_code=500, detail=f"Failed to start analysis: {str(e)}")
 
 
+
+class ResumeStructItem(BaseModel):
+    resume_id: str
+    resume_text: str
+
 class ResumeStructRequest(BaseModel):
-    resume_list: List[ResumeItem]
+    resume_list: List[ResumeStructItem]
     batch_name: str = None
     batch_id: str = None  
 

@@ -1,5 +1,6 @@
 import os
 from celery import Celery
+import ssl
 
 redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
 
@@ -42,4 +43,8 @@ celery_app.conf.update(
     
     # Concurrency settings
     worker_concurrency=10,  # Match your desired concurrency level
+
+    broker_use_ssl={'ssl_cert_reqs': 'required', 'ssl_ca_certs': "/etc/ssl/certs/ca-certificates.crt"},
+    redis_backend_use_ssl={'ssl_cert_reqs': 'required', 'ssl_ca_certs': "/etc/ssl/certs/ca-certificates.crt"},
+
 )

@@ -11,7 +11,7 @@ use_ssl = REDIS_URL.startswith("rediss://")
 connection_pool = ConnectionPool.from_url(
     REDIS_URL,
     decode_responses=True,
-    max_connections=REDIS_MAX_CONNECTIONS,
+    max_connections=20,
     retry_on_timeout=True,
     retry_on_error=[redis.ConnectionError, redis.TimeoutError],
     socket_keepalive=True,

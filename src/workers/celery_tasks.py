@@ -8,6 +8,7 @@ import logging
 import traceback
 import hashlib
 import time
+import threading
 # from celery.exceptions import Retry
 
 # Configure logging
@@ -26,8 +27,14 @@ def process_resume_task(self, resume_text, parameters, resume_id, batch_id, tota
     """
     Process a single resume with deduplication and comprehensive error handling
     """
+
+
+    thread_id = threading.get_ident() # Get the current thread's unique ID
+
+    logger.info(f"[Thread ID: {thread_id}] 🚀 STARTING task for resume {resume_id}.")
+
     redis_client = get_redis_client()
-    status_channel = f"resume_status_{batch_id}"
+    status_channel = f"resume-status_{batch_id}"
     # status_channel = f"resume_status"
     # Generate unique hash for deduplication
     resume_hash = generate_resume_hash(resume_text, parameters)
@@ -64,49 +71,13 @@ def process_resume_task(self, resume_text, parameters, resume_id, batch_id, tota
             return {"resume_result": cached_result, "cached": True}
 
         # Check if this exact resume+parameters is already being processed
-        if redis_client.exists(processing_key):
-            logger.info(
-                f"🔄 Resume {resume_id} already being processed (hash: {resume_hash[:8]})")
-
-            # Wait for the other task to complete and get result
-            max_wait = 300  # 5 minutes max wait
-            waited = 0
-            while redis_client.exists(processing_key) and waited < max_wait:
-                time.sleep(2)
-                waited += 2
-
-            # Check if result is available after waiting
-            if redis_client.exists(result_key):
-                cached_result = json.loads(redis_client.get(result_key))
-                logger.info(f"✅ Using cached result for resume {resume_id}")
-
-                # Atomically increment progress and check completion
-                current_count, is_complete = increment_batch_progress(
-                    batch_id, total_count, redis_client)
-
-                # Publish the cached result
-                publish_message(status_channel, json.dumps({
-                    "action": "analysis/result",
-                    "resume_id": resume_id,
-                    "batch_id": batch_id,
-                    "candidate_id": candidate_id,
-                    "round_id": round_id,
-                    "resume_result": cached_result,
-                    "processing_time": time.time() - start_time,
-                    "cached": True,
-                    "batch_progress": f"{current_count}/{total_count}"
-                }))
-
-                logger.info(f"📤 Results published for resume {resume_id}")
-                return {"resume_result": cached_result, "cached": True}
-            else:
-                # If still no result available, continue with normal processing
-                logger.warning(
-                    f"⚠️ No cached result found after waiting for resume {resume_id}")
-
-        # Mark as being processed (expires in 10 minutes)
-        redis_client.setex(processing_key, 600, "processing")
-
+        is_set = redis_client.set(processing_key, "processing", nx=True, ex=600)
+        if not is_set:
+            # Another task is already processing this.
+            # You can either wait, retry, or skip. Retrying is a good option.
+            logger.info(f"🔄 Resume {resume_id} already being processed, retrying...")
+            raise self.retry(countdown=10)
+        
         logger.info(
             f"🚀 Starting processing for resume {resume_id}/{total_count} (batch: {batch_id})")
 
@@ -120,9 +91,14 @@ def process_resume_task(self, resume_text, parameters, resume_id, batch_id, tota
             "round_id": round_id,
             "progress": 0
         }))
+        
+        logger.info(f"[Thread ID: {thread_id}] 📞 Calling LLM for resume {resume_id}. Waiting for response...")
 
         # Main processing - LLM call
         resume_result = evaluate_resume_sync(resume_text, parameters)
+        
+
+        logger.info(f"[Thread ID: {thread_id}] ✅ LLM call COMPLETE for resume {resume_id}.")
 
         processing_time = time.time() - start_time
 
@@ -191,11 +167,12 @@ def process_resume_task(self, resume_text, parameters, resume_id, batch_id, tota
         raise
 
     finally:
+        logger.info(f"[Thread ID: {thread_id}] 🏁 FINISHED task for resume {resume_id}.")
+
         # Cleanup processing lock if still exists
         if redis_client.exists(processing_key):
             redis_client.delete(processing_key)
 
-        logger.info(f"🏁 Task completed for resume {resume_id}")
 
 
 @celery_app.task(bind=True, max_retries=100, default_retry_delay=3)
@@ -210,8 +187,13 @@ def struct_resume_task(self, resume_text, resume_id, batch_id, total_count):
         batch_id: Unique identifier for the entire batch
         total_count: Total number of resumes in the batch
     """
+    
+    thread_id = threading.get_ident() # Get the current thread's unique ID
+
+    logger.info(f"[Thread ID: {thread_id}] 🚀 STARTING task for resume {resume_id}.")
+
     redis_client = get_redis_client()
-    status_channel = f"resume_status_{batch_id}"
+    status_channel = f"resume-status_{batch_id}"
     # status_channel = f"resume_status"
 
     # Generate unique hash for deduplication
@@ -222,36 +204,6 @@ def struct_resume_task(self, resume_text, resume_id, batch_id, total_count):
     start_time = time.time()
 
     try:
-        # Check if this exact resume+parameters is already being processed
-        if redis_client.exists(processing_key):
-            logger.info(
-                f"🔄 Resume {resume_id} already being processed (hash: {resume_hash[:8]})")
-
-            # Wait for the other task to complete and get result
-            raise self.retry(countdown=3)
-
-            # Check if result is available
-            if redis_client.exists(result_key):
-                cached_result = json.loads(redis_client.get(result_key))
-                logger.info(f"✅ Using cached result for resume {resume_id}")
-
-                # Atomically increment progress and check completion
-                current_count, is_complete = increment_batch_progress(
-                    batch_id, total_count, redis_client)
-
-                # Publish the cached result
-                publish_message(status_channel, json.dumps({
-                    "action": "struct/result",
-                    "resume_id": resume_id,
-                    "batch_id": batch_id,
-                    "resume_result": cached_result,
-                    "processing_time": time.time() - start_time,
-                    "cached": True,
-                    "batch_progress": f"{current_count}/{total_count}"
-                }))
-
-                return {"resume_result": cached_result, "cached": True}
-
         # Check if result already exists in cache
         if redis_client.exists(result_key):
             cached_result = json.loads(redis_client.get(result_key))
@@ -274,11 +226,15 @@ def struct_resume_task(self, resume_text, resume_id, batch_id, total_count):
 
             return {"resume_result": cached_result, "cached": True}
 
-        # Mark as being processed (expires in 10 minutes)
-        redis_client.setex(processing_key, 600, "processing")
+        is_set = redis_client.set(processing_key, "processing", nx=True, ex=600)
+        if not is_set:
+            # Another task is already processing this.
+            # You can either wait, retry, or skip. Retrying is a good option.
+            logger.info(f"🔄 Resume {resume_id} already being processed, retrying...")
+            raise self.retry(countdown=10)
 
         logger.info(
-            f"🚀 Starting processing for resume {resume_id}/{total_count} (batch: {batch_id})")
+            f"🚀 Starting processing for resume {resume_id} (batch: {batch_id})")
 
         # Publish processing start message
         publish_message(status_channel, json.dumps({
@@ -291,9 +247,13 @@ def struct_resume_task(self, resume_text, resume_id, batch_id, total_count):
 
         # Log before LLM call
         # logger.info(f"📄 Calling LLM for resume {resume_id}")
-
+        logger.info(f"[Thread ID: {thread_id}] 📞 Calling LLM for resume {resume_id}. Waiting for response...")
         # Main processing - LLM call
         resume_result = extract_profile_data(resume_text)
+        
+        # Immediately after the LLM call
+        logger.info(f"[Thread ID: {thread_id}] ✅ LLM call COMPLETE for resume {resume_id}.")
+
 
         processing_time = time.time() - start_time
         # logger.info(f"✅ LLM processing completed for resume {resume_id} in {processing_time:.2f}s")
@@ -360,11 +320,11 @@ def struct_resume_task(self, resume_text, resume_id, batch_id, total_count):
         raise
 
     finally:
+        logger.info(f"[Thread ID: {thread_id}] 🏁 FINISHED task for resume {resume_id}.")
+
         # Cleanup processing lock if still exists
         if redis_client.exists(processing_key):
             redis_client.delete(processing_key)
-
-        logger.info(f"🏁 Task completed for resume {resume_id}")
 
 
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=60,ignore_result=True)
@@ -378,7 +338,7 @@ def pool_analysis_task(self,profile_analysis,parameters,profile_id,batch_id,tota
     """
     
     redis_client=get_redis_client()
-    status_channel=f"pool_status_{batch_id}"
+    status_channel=f"pool-status_{batch_id}"
 
     logger.info(f"🚀 Starting processing for resume {profile_id}/{total_count} (batch: {batch_id})")
     start_time=time.time()

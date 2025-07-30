@@ -245,28 +245,28 @@ def start_talentPool_analysis(payload: TalentPoolStructRequest):
             status_code=500, detail=f"Failed to start analysis: {str(e)}")
 
 
-@router.get("/batch-status/{batch_id}")
-def get_batch_status(batch_id: str):
-    """
-    Get current status of a processing batch
-    """
-    try:
-        from src.utils.redis_pubsub import get_batch_progress
+# @router.get("/batch-status/{batch_id}")
+# def get_batch_status(batch_id: str):
+#     """
+#     Get current status of a processing batch
+#     """
+#     try:
+#         from src.utils.redis_pubsub import get_batch_progress
 
-        completed_count = get_batch_progress(batch_id)
+#         completed_count = get_batch_progress(batch_id)
 
-        return {
-            "batch_id": batch_id,
-            "completed_count": completed_count,
-            "sse_channel": f"resume_status_{batch_id}",
-            # Adjust based on your batch size
-            "status": "processing" if completed_count < 1000 else "completed"
-        }
+#         return {
+#             "batch_id": batch_id,
+#             "completed_count": completed_count,
+#             "sse_channel": f"resume_status_{batch_id}",
+#             # Adjust based on your batch size
+#             "status": "processing" if completed_count < 1000 else "completed"
+#         }
 
-    except Exception as e:
-        logger.error(f"Error getting batch status: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to get status: {str(e)}")
+#     except Exception as e:
+#         logger.error(f"Error getting batch status: {str(e)}")
+#         raise HTTPException(
+#             status_code=500, detail=f"Failed to get status: {str(e)}")
 
 
 @router.delete("/cleanup-batch/{batch_id}")

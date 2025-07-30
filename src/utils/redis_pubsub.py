@@ -2,6 +2,9 @@ import redis
 import os
 from redis.connection import ConnectionPool
 import json,ssl
+from dotenv import load_dotenv
+
+load_dotenv()
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 
@@ -11,7 +14,7 @@ use_ssl = REDIS_URL.startswith("rediss://")
 connection_pool = ConnectionPool.from_url(
     REDIS_URL,
     decode_responses=True,
-    max_connections=20,
+    max_connections=int(os.getenv("MAX_REDIS_CONN")),
     retry_on_timeout=True,
     retry_on_error=[redis.ConnectionError, redis.TimeoutError],
     socket_keepalive=True,
@@ -98,19 +101,19 @@ def increment_batch_progress(batch_id, total_count, redis_client):
         redis_client.expire(progress_key, 3600)
         return current_count, current_count >= total_count
 
-def get_batch_progress(batch_id):
-    """Get processing progress for a batch with connection reuse"""
-    try:
-        # Use pipeline for batch operations
-        with r.pipeline() as pipe:
-            # Count completed tasks
-            pattern = f"result:*batch_{batch_id}*"
-            pipe.keys(pattern)
-            results = pipe.execute()
-            return len(results[0]) if results else 0
-    except Exception as e:
-        print(f"Error getting batch progress: {e}")
-        return 0
+# def get_batch_progress(batch_id):
+#     """Get processing progress for a batch with connection reuse"""
+#     try:
+#         # Use pipeline for batch operations
+#         with r.pipeline() as pipe:
+#             # Count completed tasks
+#             pattern = f"result:*batch_{batch_id}*"
+#             pipe.keys(pattern)
+#             results = pipe.execute()
+#             return len(results[0]) if results else 0
+#     except Exception as e:
+#         print(f"Error getting batch progress: {e}")
+#         return 0
 
 def cleanup_batch_data(batch_id, max_age_seconds=3600):
     """Clean up old batch data with batch operations"""

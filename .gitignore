@@ -7,3 +7,5 @@ test.py
 first_10_resumes.json
 
 /src/api/sse_routes copy.py
+
+/src/workers/celery_tasks copy.py

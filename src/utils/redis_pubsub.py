@@ -1,17 +1,13 @@
-import redis.asyncio as redis
+import redis
 import os
-from redis.asyncio.connection import ConnectionPool
+from redis.connection import ConnectionPool
 import json,ssl
 from dotenv import load_dotenv
-
-import logging
-
-logger = logging.getLogger(__name__)
 
 load_dotenv()
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
-MAX_REDIS_CONNECTIONS = int(os.getenv("MAX_REDIS_CONNECTIONS", "100"))
+
 use_ssl = REDIS_URL.startswith("rediss://")
 
 # Create connection pool for better performance
@@ -27,27 +23,10 @@ connection_pool = ConnectionPool.from_url(
     )
 
 # Redis connection with connection pooling
-try:
-    async_connection_pool = ConnectionPool.from_url(
-        REDIS_URL,
-        decode_responses=True,
-        max_connections=MAX_REDIS_CONNECTIONS,
-        socket_keepalive=True,
-        ssl_cert_reqs='required' if use_ssl else None,
-        ssl_ca_certs="/etc/ssl/certs/ca-certificates.crt"
-    )
+r = redis.Redis(connection_pool=connection_pool)
 
-    # Asynchronous Redis client instance
-    r = redis.Redis(connection_pool=async_connection_pool)
-    logger.info("✅ Asynchronous Redis connection pool created successfully.")
-
-except Exception as e:
-    logger.error(f"❌ Failed to create asynchronous Redis connection pool: {e}")
-    r = None
 def get_redis_client():
     """Get Redis client instance"""
-    if r is None:
-        raise ConnectionError("Asynchronous Redis client is not available.")
     return r
 
 def publish_message(channel, message):

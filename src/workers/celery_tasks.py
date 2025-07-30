@@ -133,14 +133,15 @@ def struct_resume_task(self, resume_text, resume_id, batch_id, total_count):
         current_count, is_complete = increment_batch_progress(batch_id, total_count, redis_client)
         
         publish_message(status_channel, json.dumps({
-            "action": "struct/result", "resume_id": resume_id, "batch_id": batch_id,
+            "action": "struct/result","batch_progress": f"{current_count}/{total_count}", "resume_id": resume_id, "batch_id": batch_id,
             "resume_result": resume_result, "processing_time": processing_time,
-            "cached": False, "batch_progress": f"{current_count}/{total_count}"
+            "cached": False
         }))
         
         return {
+            "batch_progress": f"{current_count}/{total_count}",
             "resume_result": resume_result, "processing_time": processing_time,
-            "cached": False, "batch_progress": f"{current_count}/{total_count}"
+            "cached": False, 
         }
     
     except Exception as e:
@@ -149,7 +150,7 @@ def struct_resume_task(self, resume_text, resume_id, batch_id, total_count):
              increment_batch_progress(batch_id, total_count, redis_client)
         raise
     finally:
-        logger.info(f"[Thread ID: {thread_id}] 🏁 FINISHED task for resume {resume_id}.")
+        # logger.info(f"[Thread ID: {thread_id}] 🏁 FINISHED task for resume {resume_id}.")
         redis_client.delete(processing_key)
 
 

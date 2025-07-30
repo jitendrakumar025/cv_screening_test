@@ -126,7 +126,7 @@ def start_resume_structuring(payload: ResumeStructRequest):
         batch_name = payload.batch_name or "resume_batch"
         batch_id = payload.batch_id
 
-        print(f"🚀 Starting batch {batch_id} with {len(resume_list)} resumes")
+        logger.info(f"🚀 Starting batch {batch_id} with {len(resume_list)} resumes")
 
         if not resume_list:
             raise HTTPException(
@@ -159,8 +159,9 @@ def start_resume_structuring(payload: ResumeStructRequest):
                 total_count=total_count
             )
             task_ids.append(task.id)
+            logger.info(f"📤 Dispatched {len(task_ids)}/{total_count} tasks for batch {batch_id}")
 
-        logger.info(f"📤 Dispatched {len(task_ids)} tasks for batch {batch_id}")
+        
 
         return BatchStatusResponse(
             batch_id=batch_id,

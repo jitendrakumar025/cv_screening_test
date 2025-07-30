@@ -3,7 +3,7 @@ from typing import Dict, Any
 import json
 
 ################## ----------################
-def extract_profile_data(resume_text:str):
+def extract_profile_data_sync(resume_text:str):
     try:
 
         PROMPT = f"""

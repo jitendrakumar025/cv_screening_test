@@ -42,7 +42,7 @@ celery_app.conf.update(
     worker_max_tasks_per_child=50,  # Restart worker after 50 tasks to prevent memory leaks
     
     # Concurrency settings
-    worker_concurrency=10,  # Match your desired concurrency level
+    worker_concurrency=10,  
 
     broker_use_ssl={'ssl_cert_reqs': 'required', 'ssl_ca_certs': "/etc/ssl/certs/ca-certificates.crt"},
     redis_backend_use_ssl={'ssl_cert_reqs': 'required', 'ssl_ca_certs': "/etc/ssl/certs/ca-certificates.crt"},

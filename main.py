@@ -35,6 +35,9 @@ class BatchStatusResponse(BaseModel):
     message: str
     sse_channel: str
 
+@app.get("/")
+async def root():
+    return {"message": "Welcome to the resume processing API!"}
 
 @app.post("/start-resume-structuring")
 async def start_resume_structuring(request: Request):
@@ -42,42 +45,45 @@ async def start_resume_structuring(request: Request):
     Accepts a list of resumes, creates a unique channel ID,
     and dispatches a Celery task for each resume.
     """
-    data = await request.json()
-    resumes_data = data.get("resume_list")
-    batch_id = data.get("batch_id")
+    try:
+        data = await request.json()
+        resumes_data = data.get("resume_list")
+        batch_id = data.get("batch_id")
+        logger.info(f"Received resume list for batch_id:{batch_id}")
+        if resumes_data is None or batch_id is None:
+            logger.error("Either Resume List or Batch Id is None!")
+            return ""
 
-    if resumes_data is None or batch_id is None:
-        logger.error("Either Resume List or Batch Id is None!")
-        return ""
+        if not isinstance(resumes_data, list) or not all(
+            "resume_id" in r and "resume_text" in r for r in resumes_data
+        ):
+            return {
+                "error": "Request must be a JSON list of objects, each with 'resume_id' and 'resume_text'."
+            }
 
-    if not isinstance(resumes_data, list) or not all(
-        "resume_id" in r and "resume_text" in r for r in resumes_data
-    ):
-        return {
-            "error": "Request must be a JSON list of objects, each with 'resume_id' and 'resume_text'."
-        }
+        # Unique ID for this specific request, used as the Redis Pub/Sub channel
+        channel_id = f"job_{batch_id}"
 
-    # Unique ID for this specific request, used as the Redis Pub/Sub channel
-    channel_id = f"job_{batch_id}"
+        # Dispatch a task for each resume, telling it which channel to publish to
+        for resume in resumes_data:
+            resume_id = resume.get("resume_id")
+            resume_text = resume.get("resume_text")
+            if resume_id and resume_text:
+                struct_resume_task.delay(resume_id, resume_text, channel_id, batch_id)
 
-    # Dispatch a task for each resume, telling it which channel to publish to
-    for resume in resumes_data:
-        resume_id = resume.get("resume_id")
-        resume_text = resume.get("resume_text")
-        if resume_id and resume_text:
-            struct_resume_task.delay(resume_id, resume_text, channel_id, batch_id)
+        total_count = len(resumes_data)
 
-    total_count = len(resumes_data)
+        logger.info(f"Started job with channel ID: {channel_id} for {total_count} resumes.")
 
-    print(f"Started job with channel ID: {channel_id} for {total_count} resumes.")
-
-    # Return the channel_id to the client so it knows where to listen
-    return BatchStatusResponse(
-        batch_id=batch_id,
-        total_count=total_count,
-        message=f"Resume processing batch '{batch_id}' dispatched successfully with {total_count} resumes",
-        sse_channel=f"{channel_id}",
-    )
+        # Return the channel_id to the client so it knows where to listen
+        return BatchStatusResponse(
+            batch_id=batch_id,
+            total_count=total_count,
+            message=f"Resume processing batch '{batch_id}' dispatched successfully with {total_count} resumes",
+            sse_channel=f"{channel_id}",
+        )
+    except Exception as e:
+        logger.error(e)
 
 
 @app.post("/start-resume-analysis")
@@ -126,7 +132,7 @@ async def start_resume_analysis(request: Request):
 
     total_count = len(resumes_data)
 
-    print(f"Started job with channel ID: {channel_id} for {total_count} resumes.")
+    logger.info(f"Started job with channel ID: {channel_id} for {total_count} resumes.")
 
     # Return the channel_id to the client so it knows where to listen
     return BatchStatusResponse(
@@ -172,7 +178,7 @@ async def start_talentPool_analysis(request: Request):
 
     total_count = len(profiles_data)
 
-    print(f"Started job with channel ID: {channel_id} for {total_count} resumes.")
+    logger.info(f"Started job with channel ID: {channel_id} for {total_count} resumes.")
 
     # Return the channel_id to the client so it knows where to listen
     return BatchStatusResponse(
@@ -208,9 +214,14 @@ async def stream_results(batch_id: str):
                     yield message["data"].decode("utf-8")
                 await asyncio.sleep(0.01)
         except asyncio.CancelledError:
-            print(f"Client disconnected from channel {channel_id}")
+            logger.info(f"Client disconnected from channel {channel_id}")
         finally:
             await pubsub.unsubscribe(channel_id)
             await r.close()
 
     return EventSourceResponse(event_generator(), media_type="text/event-stream")
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -7,6 +7,7 @@ import os
 from dotenv import load_dotenv
 import logging
 from pydantic import BaseModel
+import socket
 
 
 from tasks import struct_resume_task, analyze_resume_task, pool_analysis_task
@@ -18,6 +19,12 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+redis_pool = redis.ConnectionPool.from_url(
+    REDIS_URL,
+    max_connections=50,
+)
 
 # --- CORS Middleware ---
 app.add_middleware(
@@ -35,9 +42,16 @@ class BatchStatusResponse(BaseModel):
     message: str
     sse_channel: str
 
+
 @app.get("/")
 async def root():
     return {"message": "Welcome to the resume processing API!"}
+
+
+@app.get("/health")
+async def check_health():
+    return {"status": "Okk"}
+
 
 @app.post("/start-resume-structuring")
 async def start_resume_structuring(request: Request):
@@ -73,7 +87,9 @@ async def start_resume_structuring(request: Request):
 
         total_count = len(resumes_data)
 
-        logger.info(f"Started job with channel ID: {channel_id} for {total_count} resumes.")
+        logger.info(
+            f"Started job with channel ID: {channel_id} for {total_count} resumes."
+        )
 
         # Return the channel_id to the client so it knows where to listen
         return BatchStatusResponse(
@@ -173,7 +189,7 @@ async def start_talentPool_analysis(request: Request):
                 parameters=parameters,
                 profile_id=profile_id,
                 batch_id=batch_id,
-                channel_id=channel_id
+                channel_id=channel_id,
             )
 
     total_count = len(profiles_data)
@@ -197,31 +213,56 @@ async def stream_results(batch_id: str):
     Valid channel_types: 'resume-status', 'pool-status'
 
     """
+    try:
 
-    async def event_generator():
-        # Connect to Redis Pub/Sub using the Azure URL
-        r = await redis.from_url(REDIS_URL)
-        pubsub = r.pubsub()
-        channel_id = f"job_{batch_id}"
-        await pubsub.subscribe(channel_id)
+        async def event_generator():
+            # Connect to Redis Pub/Sub using the Azure URL
+            # r = await redis.from_url(REDIS_URL)
+            r = redis.Redis(
+                connection_pool=redis_pool,
+                socket_keepalive=True,
+                socket_keepalive_options={
+                    socket.TCP_KEEPIDLE: 1,  # Use socket constants, not strings
+                    socket.TCP_KEEPINTVL: 3,  # These are the actual integer constants
+                    socket.TCP_KEEPCNT: 5,
+                },
+                health_check_interval=30,
+            )
+            pubsub = r.pubsub()
+            channel_id = f"job_{batch_id}"
+            await pubsub.subscribe(channel_id)
 
-        try:
-            while True:
-                message = await pubsub.get_message(
-                    ignore_subscribe_messages=True, timeout=1.0
-                )
-                if message:
-                    yield message["data"].decode("utf-8")
-                await asyncio.sleep(0.01)
-        except asyncio.CancelledError:
-            logger.info(f"Client disconnected from channel {channel_id}")
-        finally:
-            await pubsub.unsubscribe(channel_id)
-            await r.close()
+            try:
+                while True:
+                    message = await pubsub.get_message(
+                        ignore_subscribe_messages=True, timeout=1.0
+                    )
+                    if message:
+                        yield message["data"].decode("utf-8")
+                    await asyncio.sleep(0.01)
+            except asyncio.CancelledError:
+                logger.info(f"Client disconnected from channel {channel_id}")
+            finally:
+                logger.info(f"Finally! Client disconnected from channel {channel_id}")
+                await pubsub.unsubscribe(channel_id)
+                await r.close()
 
-    return EventSourceResponse(event_generator(), media_type="text/event-stream")
+        return EventSourceResponse(
+            event_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",  # Critical for Azure
+                "Transfer-Encoding": "chunked",
+            },
+        )
+
+    except Exception as e:
+        logger.error(e)
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+    uvicorn.run(app)

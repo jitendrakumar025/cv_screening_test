@@ -4,3 +4,5 @@ __pycache__
 .venv
 
 test.json
+
+main copy.py

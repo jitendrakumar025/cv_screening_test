@@ -1,12 +1,14 @@
 import os
 import time
 import json
+from celery import result
 import redis
 from celery_app import celery
 from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
 from typing_extensions import Dict, Any
 import logging
+from celery.result import AsyncResult
 
 # Load environment variables from .env file
 load_dotenv()
@@ -164,11 +166,12 @@ def struct_resume_task(
         # Publish the error message to the channel
         r.publish(channel_id, json.dumps(error_message))
 
-    return f"Published structured result to channel {channel_id}"
+    # return f"Published structured result to channel {channel_id}"
 
 
-@celery.task
+@celery.task(bind=True,ignore_result=True)
 def analyze_resume_task(
+    self,
     resume_id: str,
     resume_text: str,
     channel_id: str,
@@ -277,8 +280,13 @@ def analyze_resume_task(
         }
         # Publish the error message to the channel
         r.publish(channel_id, json.dumps(error_message))
-
-    return f"Published result to channel {channel_id}"
+    finally:
+        # This block will run whether the task succeeded or failed
+        # Get the result object for the current task and forget it.
+        result = AsyncResult(self.request.id)
+        result.forget()
+        logger.info(f"[{channel_id}] Forgot result key for task {self.request.id}")
+    # return f"Published result to channel {channel_id}"
 
 
 @celery.task

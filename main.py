@@ -1,8 +1,10 @@
 import asyncio
 import redis.asyncio as redis
-from fastapi import FastAPI, Request
+
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from sse_starlette.sse import EventSourceResponse
+
+
 import os
 from dotenv import load_dotenv
 import logging
@@ -205,61 +207,36 @@ async def start_talentPool_analysis(request: Request):
     )
 
 
-@app.get("/stream/{channel_type}/{batch_id}")
-async def stream_results(batch_id: str):
+@app.websocket("/ws/{batch_id}")
+async def websocket_endpoint(websocket: WebSocket, batch_id: str):
     """
-    This endpoint uses Server-Sent Events to stream results.
-    It subscribes to the Redis channel and forwards messages.
-    Valid channel_types: 'resume-status', 'pool-status'
+    Establishes a WebSocket connection and streams results for a given batch_id.
+    It subscribes to the Redis channel and forwards messages to the client.
+    """
+    await websocket.accept()
+    r = redis.Redis(connection_pool=redis_pool)
+    pubsub = r.pubsub()
+    channel_id = f"job_{batch_id}"
+    await pubsub.subscribe(channel_id)
 
-    """
     try:
-
-        async def event_generator():
-            # Connect to Redis Pub/Sub using the Azure URL
-            # r = await redis.from_url(REDIS_URL)
-            r = redis.Redis(
-                connection_pool=redis_pool,
-                socket_keepalive=True,
-                socket_keepalive_options={
-                    socket.TCP_KEEPIDLE: 1,  # Use socket constants, not strings
-                    socket.TCP_KEEPINTVL: 3,  # These are the actual integer constants
-                    socket.TCP_KEEPCNT: 5,
-                },
-                health_check_interval=30,
+        # This loop will continuously listen for new messages from Redis
+        while True:
+            message = await pubsub.get_message(
+                ignore_subscribe_messages=True, timeout=1.0
             )
-            pubsub = r.pubsub()
-            channel_id = f"job_{batch_id}"
-            await pubsub.subscribe(channel_id)
-
-            try:
-                while True:
-                    message = await pubsub.get_message(
-                        ignore_subscribe_messages=True, timeout=1.0
-                    )
-                    if message:
-                        yield message["data"].decode("utf-8")
-                    await asyncio.sleep(0.01)
-            except asyncio.CancelledError:
-                logger.info(f"Client disconnected from channel {channel_id}")
-            finally:
-                logger.info(f"Finally! Client disconnected from channel {channel_id}")
-                await pubsub.unsubscribe(channel_id)
-                await r.close()
-
-        return EventSourceResponse(
-            event_generator(),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "X-Accel-Buffering": "no",  # Critical for Azure
-                "Transfer-Encoding": "chunked",
-            },
-        )
-
+            if message and message.get("type") == "message":
+                # Forward the message to the client over the WebSocket
+                await websocket.send_text(message["data"].decode("utf-8"))
+    except WebSocketDisconnect:
+        logger.info(f"Client disconnected from WebSocket for batch {batch_id}")
     except Exception as e:
-        logger.error(e)
+        logger.error(f"Error in WebSocket for batch {batch_id}: {e}")
+    finally:
+        # Clean up the connection and subscription when the client disconnects
+        logger.info(f"Unsubscribing and closing connection for batch {batch_id}")
+        await pubsub.unsubscribe(channel_id)
+        await r.aclose()
 
 
 if __name__ == "__main__":

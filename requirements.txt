@@ -4,3 +4,4 @@ fastapi
 uvicorn[standard] 
 langchain-google-genai
 python-dotenv
+tenacity

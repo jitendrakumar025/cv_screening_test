@@ -6,6 +6,14 @@ import redis
 from celery_app import celery
 from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+)
+from requests.exceptions import RequestException
+
 from typing_extensions import Dict, Any
 import logging
 from celery.result import AsyncResult
@@ -15,7 +23,9 @@ load_dotenv()
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger(__name__)
 
 # ---Initialize clients once per worker process ---
@@ -28,7 +38,12 @@ def get_llm():
     global llm
     if llm is None:
         # print("Initializing LLM for this worker process...")
-        llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=0.5)
+        llm = ChatGoogleGenerativeAI(
+            model="gemini-2.5-flash",
+            temperature=0.5,
+            request_timeout=60,  # Add timeout
+            max_retries=3,  # Built-in retry
+        )
     return llm
 
 
@@ -37,13 +52,46 @@ def get_redis_client():
     global redis_client
     if redis_client is None:
         # print("Initializing Redis client for this worker process...")
-        redis_client = redis.from_url(REDIS_URL)
+        redis_client = redis.from_url(
+            REDIS_URL,
+            socket_connect_timeout=5,
+            socket_keepalive=True,
+            health_check_interval=30,
+        )
     return redis_client
 
 
-@celery.task
+def publish_to_channel(channel_id: str, payload: dict, max_retries=3):
+    """Publishes message to Redis with retry logic."""
+    r = get_redis_client()
+    for attempt in range(max_retries):
+        try:
+            r.publish(channel_id, json.dumps(payload))
+            return True
+        except redis.RedisError as e:
+            logger.warning(f"Redis publish attempt {attempt + 1} failed: {e}")
+            if attempt == max_retries - 1:
+                logger.error(
+                    f"Failed to publish to {channel_id} after {max_retries} attempts"
+                )
+                return False
+            time.sleep(0.5 * (attempt + 1))  # Exponential backoff
+    return False
+
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type((RequestException, TimeoutError)),
+)
+def invoke_llm_with_retry(llm_instance, prompt: str):
+    """Wrapper for LLM invocation with automatic retries."""
+    return llm_instance.invoke(prompt)
+
+
+@celery.task(bind=True, ignore_result=True, acks_late=True, max_retries=3)
 def struct_resume_task(
-    resume_id: str, resume_text: str, channel_id: str, batch_id: str
+    self, resume_id: str, resume_text: str, channel_id: str, batch_id: str
 ):
     """
     Processes a single resume and publishes the result to a Redis Pub/Sub channel.
@@ -56,14 +104,12 @@ def struct_resume_task(
             "batch_id": batch_id,
         }
 
+        publish_to_channel(channel_id, status_payload)
+
         initialized_llm = get_llm()
-        r = get_redis_client()
+        start_time = time.time()
 
         # logger.info(f"[{channel_id}] Processing: {resume_text[:40]}...")
-
-        r.publish(channel_id, json.dumps(status_payload))
-
-        start_time = time.time()
 
         PROMPT = f"""
      You are an expert in reading and understanding resume/cv. You will get extracted text of the resume, your work is to read and understand the cv text carefully and response with a JSON data structure with following keys and specifications:
@@ -136,7 +182,7 @@ def struct_resume_task(
      The Final Output Should start with '```json' and trailing with '```'.
 """.strip()
 
-        results = initialized_llm.invoke(PROMPT)
+        results = invoke_llm_with_retry(initialized_llm, PROMPT)
         json_result: Dict[str, Any] = json.loads(
             results.content.strip().strip("```json").strip("```")
         )
@@ -151,25 +197,50 @@ def struct_resume_task(
             "processing_time": processing_time,
         }
         # Publish the result to the unique channel for this job
-        r.publish(channel_id, json.dumps(result_payload))
+        publish_to_channel(channel_id, result_payload)
         # logger.info(f"[{channel_id}] Published result for: {resume_text[:40]}...")
 
-    except Exception as e:
-        logger.error(f"[{channel_id}] Error processing task: {e}")
-        r = get_redis_client()
-        error_message = {
-            "status": "ERROR",
-            "data": {"error": str(e), "original_text": resume_text},
+    except json.JSONDecodeError as e:
+        logger.error(f"JSON parsing error for resume {resume_id}: {e}")
+        error_payload = {
+            "action": "struct/error",
             "resume_id": resume_id,
             "batch_id": batch_id,
+            "error": "Failed to parse LLM response as JSON",
+            "error_type": "JSON_DECODE_ERROR",
         }
-        # Publish the error message to the channel
-        r.publish(channel_id, json.dumps(error_message))
+        publish_to_channel(channel_id, error_payload)
 
-    # return f"Published structured result to channel {channel_id}"
+    except Exception as e:
+        logger.error(f"Error processing resume {resume_id}: {str(e)}", exc_info=True)
+
+        # Retry logic for transient errors
+        if self.request.retries < self.max_retries:
+            logger.info(
+                f"Retrying task for resume {resume_id} (attempt {self.request.retries + 1})"
+            )
+            raise self.retry(exc=e, countdown=5 * (2**self.request.retries))
+
+        # Final error after all retries
+        error_payload = {
+            "action": "struct/error",
+            "resume_id": resume_id,
+            "batch_id": batch_id,
+            "error": str(e),
+            "error_type": type(e).__name__,
+            "retries_exhausted": True,
+        }
+        publish_to_channel(channel_id, error_payload)
+
+    finally:
+        # Critical: Forget task result to prevent memory leak
+        try:
+            AsyncResult(self.request.id).forget()
+        except Exception as e:
+            logger.warning(f"Failed to forget task result: {e}")
 
 
-@celery.task(bind=True,ignore_result=True)
+@celery.task(bind=True, ignore_result=True, acks_late=True, max_retries=3)
 def analyze_resume_task(
     self,
     resume_id: str,
@@ -181,14 +252,14 @@ def analyze_resume_task(
     parameters: Dict[str, Any],
 ):
     """_summary_
-
-    Args:
-        resume_id (str): _description_
-        resume_text (str): _description_
-        channel_id (str): _description_
-        batch_id (str): _description_
-        candidate_id (str): _description_
-        round_id (str): _description_
+    Analyzes resume against evaluation criteria.
+        Args:
+            resume_id (str): _description_
+            resume_text (str): _description_
+            channel_id (str): _description_
+            batch_id (str): _description_
+            candidate_id (str): _description_
+            round_id (str): _description_
     """
 
     try:
@@ -201,58 +272,87 @@ def analyze_resume_task(
             "round_id": round_id,
         }
 
-        initialized_llm = get_llm()
-        r = get_redis_client()
+        publish_to_channel(channel_id, status_payload)
 
         # logger.info(f"[{channel_id}] Processing: {resume_text[:40]}...")
 
-        r.publish(channel_id, json.dumps(status_payload))
-
         start_time = time.time()
+        initialized_llm = get_llm()
 
         PROMPT = f"""
+            You are an expert resume evaluator. Evaluate the given RESUME against the provided PARAMETERS.
+
+            Each 'evaluation_criteria' in PARAMETERS contains:
+            - `parameter`: The criterion name
+            - `description`: What this criterion means
+            - `weightage`: The maximum possible score for this criterion
+
+            ---
+
+            ### STRICT INSTRUCTIONS:
+            
+            2. Each rubric object **must** contain the following fields:
+            - `name`: Criterion name from 'evaluation_criteria' in PARAMETERS
+            - `score`: Integer between 0 and the specified `weightage`,Should not exceed weightage.
+            - `justification`: 20–30 words explaining why the score was given
+            4. Output all rubrics in the **same order** as they appear in 'evaluation_criteria' in PARAMETERS.
+
+            ---
+
+            ### SPECIAL CASE: "Additional Parameters"
+            If PARAMETERS contain an entry named **"Additional Parameters"**, it will be an array of JSON objects with:
+            - `title`: The custom parameter name
+            - `options`: Possible answer options
+            - `type`: The expected response type (TEXT, TRUE_FALSE, MULTI_SELECT, TAG, etc.)
+
+            Include them under `additional` in your output:
+            - `title`: same as in PARAMETERS
+            - `type`: same as provided
+            - `response`: array of strings (for MULTI_SELECT, TAG, etc.)
+            - `answer`: single string (for TEXT or TRUE_FALSE)
+
+            ---
             RESUME = {resume_text}
 
             PARAMETERS = {parameters}
-            
-            Please evaluate the following resume against the provided evaluation criteria. For each criterion, provide a score from 0-10 (0 being no evidence, 10 being exceptional evidence) and a 20-30 words for reason for the score.
 
-            ### Special Case:
-            **PARAMETERS contain a field name "Additional Parameters" is array of json with keys `title`: "additional parameter defined by recruiter", `options`:array that contains option for your response,"type": "your response type on this parameter"
 
-            *For "Additional Parameters" your output should be json with keys `title` and `response`  
-            
-            ## Output
-            STRICTLY ADHERE TO THE FOLLOWING OUTPUT STRUCTURE:
-            The output must start and trail with triple backtics.
+            ### OUTPUT FORMAT (STRICT)
+            Your response must:
+            - Be enclosed in triple backticks.
+            - Contain **only** valid JSON (no text before or after).
+            - if there is no "Additional Parameters" in PARAMETERS, return an empty array for `additional`.
+            - Follow this exact structure:
 
             ```json
-                {{"resume_score": {{
-                "summary": "A brief summary of the resume evaluation, highlighting key strengths and weaknesses.",
+            {{
+            "resume_score": {{
+                "summary": "A concise summary (2–3 sentences) highlighting key strengths and weaknesses.",
                 "rubrics": [
-                    {{ "name": "Name of the Criteria as provided in the evaluation criteria",
-                    "score": 4, // Integer (0-10) based on resume match
-                    "justification": "Resume mentions relevant experience with [tech/skill], but lacks [specific detail]."
-                    }},
-                    ... so on
-                 ],
-                 
-                "additional":[{{"title":"additional parameter defined by recruiter",
-                  "type":"This will be the same from the additional question given in rubrics additional paramter",
-                  "response": ["based on the question if answer requires multiple answers you will answer here in array of strings (ALWAYS). Like for type MULTI_SELECT or TAG."]
-                  "answer":"You will answer here when the type is TEXT/TRUE_FALSE or any question which requires explanation. This will always be string not array of strings"
-                  }}.
-                  ... so on for other additional fields
-                  ]
+                {{
+                    "name": "Criterion name from 'evaluation_criteria' in PARAMETERS",
+                    "score": 7,
+                    "justification": "Resume demonstrates relevant experience but lacks depth in algorithmic projects."
+                }},
+                ...
+                ],
+                "additional": [
+                {{
+                    "title": "Custom parameter defined by recruiter",
+                    "type": "Provided response type",
+                    "response": ["Array of strings for multi-answer fields"],
+                    "answer": "String for text-based or boolean-type questions"
                 }}
-                 }}```
-            
-        """
+                ]
+            }}
+            }}
+            """
 
-        results = initialized_llm.invoke(PROMPT)
+        results = invoke_llm_with_retry(initialized_llm, PROMPT)
         json_result: Dict[str, Any] = json.loads(
             results.content.strip().strip("```json").strip("```")
         )
+
 
         end_time = time.time()
         processing_time = round(end_time - start_time, 2)
@@ -266,32 +366,50 @@ def analyze_resume_task(
             "round_id": round_id,
         }
         # Publish the result to the unique channel for this job
-        r.publish(channel_id, json.dumps(result_payload))
+        publish_to_channel(channel_id, result_payload)
         # logger.info(f"[{channel_id}] Published result for: {resume_text[:40]}...")
 
-    except Exception as e:
-        logger.error(f"[{channel_id}] Error processing task: {e}")
-        r = get_redis_client()
-        error_message = {
-            "status": "ERROR",
-            "data": {"error": str(e), "original_text": resume_text},
+    except json.JSONDecodeError as e:
+        logger.error(f"JSON parsing error for resume {resume_id}: {e}")
+        error_payload = {
+            "action": "analysis/error",
+            "resume_id": resume_id,
+            "batch_id": batch_id,
             "candidate_id": candidate_id,
             "round_id": round_id,
+            "error": "Failed to parse LLM response",
+            "error_type": "JSON_DECODE_ERROR",
         }
-        # Publish the error message to the channel
-        r.publish(channel_id, json.dumps(error_message))
+        publish_to_channel(channel_id, error_payload)
+
+    except Exception as e:
+        logger.error(f"Error analyzing resume {resume_id}: {str(e)}", exc_info=True)
+
+        if self.request.retries < self.max_retries:
+            raise self.retry(exc=e, countdown=5 * (2**self.request.retries))
+
+        error_payload = {
+            "action": "analysis/error",
+            "resume_id": resume_id,
+            "batch_id": batch_id,
+            "candidate_id": candidate_id,
+            "round_id": round_id,
+            "error": str(e),
+            "error_type": type(e).__name__,
+            "retries_exhausted": True,
+        }
+        publish_to_channel(channel_id, error_payload)
+
     finally:
-        # This block will run whether the task succeeded or failed
-        # Get the result object for the current task and forget it.
-        result = AsyncResult(self.request.id)
-        result.forget()
-        logger.info(f"[{channel_id}] Forgot result key for task {self.request.id}")
-    # return f"Published result to channel {channel_id}"
+        try:
+            AsyncResult(self.request.id).forget()
+        except Exception as e:
+            logger.warning(f"Failed to forget task result: {e}")
 
 
-@celery.task
+@celery.task(bind=True, ignore_result=True, acks_late=True, max_retries=3)
 def pool_analysis_task(
-    candidate_profile, parameters, profile_id, batch_id, channel_id: str
+    self, candidate_profile, parameters, profile_id, batch_id, channel_id: str
 ):
     """
     This task is used to analyse candidates resumes in talent pool
@@ -312,13 +430,9 @@ def pool_analysis_task(
             "batch_id": batch_id,
         }
 
+        publish_to_channel(channel_id, status_payload)
+
         initialized_llm = get_llm()
-        r = get_redis_client()
-
-        # logger.info(f"[{channel_id}] Processing: {resume_text[:40]}...")
-
-        r.publish(channel_id, json.dumps(status_payload))
-
         start_time = time.time()
 
         PROMPT = f"""
@@ -383,7 +497,7 @@ def pool_analysis_task(
         Only return valid JSON — no additional commentary or explanation.
 """
 
-        results = initialized_llm.invoke(PROMPT)
+        results = invoke_llm_with_retry(initialized_llm, PROMPT)
         json_result: Dict[str, Any] = json.loads(
             results.content.strip().strip("```json").strip("```")
         )
@@ -398,15 +512,37 @@ def pool_analysis_task(
             "processing_time": processing_time,
         }
         # Publish the result to the unique channel for this job
-        r.publish(channel_id, json.dumps(result_payload))
+        publish_to_channel(channel_id, result_payload)
+
+    except json.JSONDecodeError as e:
+        logger.error(f"JSON parsing error for profile {profile_id}: {e}")
+        error_payload = {
+            "action": "pool-analysis/error",
+            "profile_id": profile_id,
+            "batch_id": batch_id,
+            "error": "Failed to parse LLM response",
+            "error_type": "JSON_DECODE_ERROR",
+        }
+        publish_to_channel(channel_id, error_payload)
 
     except Exception as e:
-        logger.error(f"[{channel_id}] Error processing task: {e}")
-        r = get_redis_client()
-        error_message = {
-            "status": "ERROR",
-            "data": {"error": str(e), "original_text": candidate_profile},
+        logger.error(f"Error analyzing profile {profile_id}: {str(e)}", exc_info=True)
+
+        if self.request.retries < self.max_retries:
+            raise self.retry(exc=e, countdown=5 * (2**self.request.retries))
+
+        error_payload = {
+            "action": "pool-analysis/error",
             "profile_id": profile_id,
+            "batch_id": batch_id,
+            "error": str(e),
+            "error_type": type(e).__name__,
+            "retries_exhausted": True,
         }
-        # Publish the error message to the channel
-        r.publish(channel_id, json.dumps(error_message))
+        publish_to_channel(channel_id, error_payload)
+
+    finally:
+        try:
+            AsyncResult(self.request.id).forget()
+        except Exception as e:
+            logger.warning(f"Failed to forget task result: {e}")
